@@ -12,8 +12,13 @@ html,body{height:100%;margin:0;background:linear-gradient(180deg,#04101a,#071226
 h1{margin:0 0 8px 0;font-size:20px}
 .grid{display:grid;grid-template-columns:1fr 460px;gap:16px}
 .card{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));border-radius:12px;padding:14px;box-shadow:0 8px 28px rgba(0,0,0,0.6)}
+/* La altura de la vista de los carretes la calculamos desde CSS usando las variables --rows y --cell-total.
+   Así evitamos inconsistencias entre el CSS y el JS. */
 .reels{display:flex;gap:10px;justify-content:center;align-items:center;height:calc(var(--rows) * var(--cell-total));}
-.reel{width:72px;background:rgba(255,255,255,0.015);border-radius:12px;overflow:hidden;position:relative;border:1px solid rgba(255,255,255,0.02)}
+.reel{width:72px;background:rgba(255,255,255,0.015);border-radius:12px;overflow:hidden;position:relative;border:1px solid rgba(255,255,255,0.02);
+/* altura del viewport del carrete igual al del contenedor para asegurar recorte idéntico */
+height: calc(var(--rows) * var(--cell-total));
+}
 .strip{position:absolute;left:0;right:0;top:0;will-change:transform}
 .cell{height:46px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px}
 .cell.bg{background:rgba(255,255,255,0.02);border-radius:6px;margin:3px}
@@ -93,6 +98,7 @@ button:disabled{opacity:0.5;cursor:default}
 const COLS = 5, ROWS = 5;
 /* Altura real aproximada por celda (height + margins) */
 const CELL_TOTAL = 52;
+/* exportamos variables CSS (nota: --rows sin unidad y --cell-total con 'px') */
 document.documentElement.style.setProperty('--cell-total', CELL_TOTAL + 'px');
 document.documentElement.style.setProperty('--rows', ROWS);
 
@@ -168,11 +174,10 @@ const reelsContainer = document.getElementById('reelsContainer');
 
 function createReels(){
   reelsContainer.innerHTML = '';
-  const reelHeight = ROWS * CELL_TOTAL;
+  // ya dejamos que CSS ponga la altura de .reel (calc(var(--rows)*var(--cell-total)))
   for(let c=0;c<COLS;c++){
     const r = document.createElement('div');
     r.className = 'reel';
-    r.style.height = reelHeight + 'px';
     const strip = document.createElement('div');
     strip.className = 'strip';
     r.appendChild(strip);
@@ -208,10 +213,12 @@ function renderStripsQuick(strips){
   }
 }
 
+/* ---------- FIX: cálculo correcto del translate para mostrar exactamente ROWS filas visibles ----------
+   Antes: se restaba un "centerOffset" que desplazaba mal la vista y daba efecto de mostrar más/menos filas.
+   Ahora: mostramos la última porción del strip que contiene exactamente ROWS celdas.
+*/
 function computeFinalTranslateFixed(reelIndex, stripLength){
-  const targetIdx = stripLength - ROWS;
-  const centerOffset = Math.floor(ROWS/2);
-  const translateCells = targetIdx - centerOffset;
+  const translateCells = stripLength - ROWS; // queremos que la ventana muestre los últimos ROWS items
   return -translateCells * CELL_TOTAL;
 }
 
@@ -276,6 +283,7 @@ function rollDeterministic(){
 }
 
 /* ---------- COMBO DETECTION ---------- */
+/* (sin cambios respecto al original — lo incluyo para que el archivo sea autocontenido) */
 function evaluateGrid(grid){
   const combos=[]; let coins=0, tickets=0;
   function addCombo(type,cells){
