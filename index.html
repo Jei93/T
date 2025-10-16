@@ -39,12 +39,54 @@
         </div>
 
         <div class="reels" id="reelsContainer" style="margin-top:12px"></div>
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Lucky Pit — Versión final (pago manual de deuda)</title>
+  <style>
+    :root{--bg:#04101a;--card:#071226;--accent:#ffd166;--accent2:#ff8a66;--muted:#9aa4b2}
+    *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#04101a,#071226);color:#e6eef6}
+    .app{max-width:1100px;margin:18px auto;padding:14px}
+    h1{margin:0 0 8px 0;font-size:20px}
+    .grid{display:grid;grid-template-columns:1fr 360px;gap:16px}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));border-radius:12px;padding:14px;box-shadow:0 8px 28px rgba(0,0,0,0.6)}
+    .reels{display:flex;gap:12px;justify-content:center;align-items:center;height:170px}
+    .reel{width:120px;height:150px;background:rgba(255,255,255,0.015);border-radius:12px;overflow:hidden;position:relative;border:1px solid rgba(255,255,255,0.02)}
+    .strip{position:absolute;left:0;right:0;top:0;will-change:transform}
+    .cell{height:46px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:24px}
+    .cell.bg{background:rgba(255,255,255,0.02);border-radius:8px;margin:4px}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
+    button{background:var(--accent);border:none;padding:10px 14px;border-radius:10px;font-weight:800;color:#081226;cursor:pointer}
+    .muted{color:var(--muted);font-size:13px}
+    .history{max-height:140px;overflow:auto;padding:6px;background:rgba(0,0,0,0.14);border-radius:8px;margin-top:12px}
+    .flash{position:fixed;left:50%;top:10%;transform:translateX(-50%);background:linear-gradient(90deg,var(--accent),var(--accent2));color:#041226;padding:12px 18px;border-radius:12px;font-weight:800;display:none;z-index:999}
+    @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>Lucky Pit — Paga la deuda cuando quieras</h1>
+    <div class="grid">
+      <section class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div class="muted">Ronda <strong id="round">1</strong> • Meta <strong id="goal">90</strong></div>
+            <div style="margin-top:6px" class="muted">Dinero: <strong id="coins">0</strong> • Tickets: <strong id="tickets">0</strong> • ATM: <strong id="atm">0</strong></div>
+          </div>
+          <div class="muted">Tiradas restantes: <strong id="spinsLeft">0</strong></div>
+        </div>
+
+        <div class="reels" id="reelsContainer" style="margin-top:12px"></div>
 
         <div class="controls">
           <button id="spinBtn">Girar (1)</button>
           <button id="multiSpinBtn">Girar x3</button>
           <button id="bankBtn">Depositar ATM</button>
           <button id="rerollStoreBtn">Re-roll Tienda (-50 coins)</button>
+          <button id="payBtn" title="Paga la deuda ahora" style="background:#7efc6b;color:#042126;font-weight:800">Pagar deuda</button>
         </div>
 
         <div class="history" id="history"></div>
@@ -68,8 +110,8 @@
   <div class="flash" id="flash">¡Jackpot!</div>
 
 <script>
-// Final polished version: removed preview, fixed animation jank by using fixed cellHeight and minimal DOM ops,
-// added "combo bias" early-game so first rounds are winnable, increased starting coins/adjusted goal and payouts.
+// Versión final: permite pagar la deuda manualmente (botón Pagar deuda).
+// Si tienes coins >= goal, ahora puedes seguir tirando hasta que decidas pagar.
 
 // ---------------- DATA ----------------
 const SYMBOLS = [
@@ -103,155 +145,59 @@ function buildWeights(){ const base = state.symbols.map(s=>s.weight); state.equi
 const reelsContainer = document.getElementById('reelsContainer');
 function createReels(){ reelsContainer.innerHTML=''; for(let i=0;i<3;i++){ const r=document.createElement('div'); r.className='reel'; const strip=document.createElement('div'); strip.className='strip'; r.appendChild(strip); reelsContainer.appendChild(r); } }
 createReels();
+const CELL_TOTAL = 54; // px
 
-// Use a fixed cell height to avoid layout reads that cause jank
-const CELL_TOTAL = 54; // px approximate (cell height + margins)
-
-function buildStripWithTarget(visibleTriple){
-  // smaller strip to reduce DOM work
-  const sequence = state.symbols.map(s=>s.id);
-  const repeats = 3; // smaller => less DOM
-  const arr = [];
-  for(let i=0;i<repeats;i++) sequence.forEach(sym=>arr.push(sym));
-  arr.push(...visibleTriple);
-  return arr;
-}
-
-function renderStripsQuick(strips){
-  for(let ri=0;ri<3;ri++){
-    const reel = reelsContainer.children[ri];
-    const strip = reel.querySelector('.strip');
-    // build fragment
-    const frag = document.createDocumentFragment();
-    strip.innerHTML='';
-    for(let k=0;k<strips[ri].length;k++){ const d=document.createElement('div'); d.className='cell bg'; d.textContent=strips[ri][k]; frag.appendChild(d); }
-    strip.appendChild(frag);
-    strip.style.transition='none'; strip.style.transform='translateY(0px)';
-  }
-}
-
-function computeFinalTranslateFixed(reelIndex, stripLength){
-  const targetIdx = stripLength - 3;
-  const viewportCellsVisible = 3; // fixed
-  const centerOffset = Math.floor(viewportCellsVisible/2);
-  const translateCells = targetIdx - centerOffset;
-  return -translateCells * CELL_TOTAL;
-}
-
-function animateStripsToTargets(strips,durations){
-  return new Promise(resolve=>{
-    renderStripsQuick(strips);
-    requestAnimationFrame(()=>{
-      let completed=0;
-      for(let ri=0;ri<3;ri++){
-        const strip = reelsContainer.children[ri].querySelector('.strip');
-        const stripLen = strips[ri].length;
-        const finalY = computeFinalTranslateFixed(ri, stripLen);
-        const dur = durations[ri];
-        let done=false;
-        const onEnd = ()=>{ if(done) return; done=true; strip.removeEventListener('transitionend', onEnd); completed++; if(completed===3) resolve(); };
-        strip.addEventListener('transitionend', onEnd);
-        // safety fallback
-        setTimeout(()=>{ if(!done) onEnd(); }, dur+220);
-        requestAnimationFrame(()=>{ strip.style.transition = `transform ${dur}ms cubic-bezier(.15,.9,.15,1)`; strip.style.transform = `translateY(${finalY}px)`; });
-      }
-    });
-  });
-}
+function buildStripWithTarget(visibleTriple){ const sequence = state.symbols.map(s=>s.id); const repeats = 3; const arr=[]; for(let i=0;i<repeats;i++) sequence.forEach(sym=>arr.push(sym)); arr.push(...visibleTriple); return arr; }
+function renderStripsQuick(strips){ for(let ri=0;ri<3;ri++){ const reel = reelsContainer.children[ri]; const strip = reel.querySelector('.strip'); const frag=document.createDocumentFragment(); strip.innerHTML=''; for(let k=0;k<strips[ri].length;k++){ const d=document.createElement('div'); d.className='cell bg'; d.textContent=strips[ri][k]; frag.appendChild(d); } strip.appendChild(frag); strip.style.transition='none'; strip.style.transform='translateY(0px)'; } }
+function computeFinalTranslateFixed(reelIndex, stripLength){ const targetIdx = stripLength - 3; const viewportCellsVisible = 3; const centerOffset = Math.floor(viewportCellsVisible/2); const translateCells = targetIdx - centerOffset; return -translateCells * CELL_TOTAL; }
+function animateStripsToTargets(strips,durations){ return new Promise(resolve=>{ renderStripsQuick(strips); requestAnimationFrame(()=>{ let completed=0; for(let ri=0;ri<3;ri++){ const strip = reelsContainer.children[ri].querySelector('.strip'); const stripLen = strips[ri].length; const finalY = computeFinalTranslateFixed(ri, stripLen); const dur = durations[ri]; let done=false; const onEnd = ()=>{ if(done) return; done=true; strip.removeEventListener('transitionend', onEnd); completed++; if(completed===3) resolve(); }; strip.addEventListener('transitionend', onEnd); setTimeout(()=>{ if(!done) onEnd(); }, dur+220); requestAnimationFrame(()=>{ strip.style.transition = `transform ${dur}ms cubic-bezier(.15,.9,.15,1)`; strip.style.transform = `translateY(${finalY}px)`; }); } }); }); }
 
 // ------------- GAME LOGIC (biased combos early) ---------------
-function rollDeterministic(){
-  const weights = buildWeights();
-  const grid = [[],[],[]];
-
-  // Early-game combo bias: increase chance of a central combo in early rounds so players can progress
-  const baseComboChance = 0.22; // 22% base chance to force a central match
-  const roundBoost = Math.max(0, 0.08 - (state.round-1)*0.02); // give extra boost in round 1-2
-  const comboChance = baseComboChance + roundBoost + (state.luck/40); // luck slightly increases
-
-  const df = Math.random();
-  if(df < comboChance){
-    // force a combo: pick symbol by weighted distribution
-    const idx = weightedPick(weights);
-    const sym = state.symbols[idx].id;
-    // set central row to this symbol across reels (column-major)
-    for(let c=0;c<3;c++){
-      // center row
-      grid[c][1] = sym;
-      // fill other rows randomly
-      for(let r=0;r<3;r++) if(r!==1){ grid[c][r] = state.symbols[weightedPick(weights)].id; }
-    }
-    return grid;
-  }
-
-  // default: fully random independent cells
-  for(let c=0;c<3;c++){
-    for(let r=0;r<3;r++){
-      const idx = weightedPick(weights);
-      grid[c][r] = state.symbols[idx].id;
-    }
-  }
-  return grid;
-}
-
-function evaluateGrid(grid){
-  const combos=[];
-  const midRow=[grid[0][1],grid[1][1],grid[2][1]];
-  const midCol=[grid[1][0],grid[1][1],grid[1][2]];
-  const diag1=[grid[0][0],grid[1][1],grid[2][2]];
-  const diag2=[grid[0][2],grid[1][1],grid[2][0]];
-  const lines=[midRow,midCol,diag1,diag2];
-  for(const line of lines) if(line[0]===line[1] && line[1]===line[2]) combos.push(line[0]);
-  let coins=0; combos.forEach(sym=>{ const s=state.symbols.find(x=>x.id===sym); if(s) coins += s.value; });
-  return {coins,combos};
-}
+function rollDeterministic(){ const weights = buildWeights(); const grid=[[],[],[]]; const baseComboChance = 0.22; const roundBoost = Math.max(0, 0.08 - (state.round-1)*0.02); const comboChance = baseComboChance + roundBoost + (state.luck/40); if(Math.random() < comboChance){ const idx = weightedPick(weights); const sym = state.symbols[idx].id; for(let c=0;c<3;c++){ grid[c][1]=sym; for(let r=0;r<3;r++) if(r!==1) grid[c][r] = state.symbols[weightedPick(weights)].id; } return grid; } for(let c=0;c<3;c++){ for(let r=0;r<3;r++){ const idx = weightedPick(weights); grid[c][r] = state.symbols[idx].id; } } return grid; }
+function evaluateGrid(grid){ const combos=[]; const midRow=[grid[0][1],grid[1][1],grid[2][1]]; const midCol=[grid[1][0],grid[1][1],grid[1][2]]; const diag1=[grid[0][0],grid[1][1],grid[2][2]]; const diag2=[grid[0][2],grid[1][1],grid[2][0]]; const lines=[midRow,midCol,diag1,diag2]; for(const line of lines) if(line[0]===line[1] && line[1]===line[2]) combos.push(line[0]); let coins=0; combos.forEach(sym=>{ const s=state.symbols.find(x=>x.id===sym); if(s) coins += s.value; }); return {coins,combos}; }
 
 // ------------- SPIN ONCE (Promise) ---------------
 let spinLocked=false;
-function spinOnce(){
-  if(spinLocked) return Promise.reject('busy');
-  if(state.spinsLeft<=0) return Promise.reject('no-spins');
-  spinLocked = true;
-  const finalGrid = rollDeterministic();
-  const strips = [];
-  for(let c=0;c<3;c++) strips.push(buildStripWithTarget(finalGrid[c]));
-  const durations = [700 + Math.random()*220, 900 + Math.random()*220, 1050 + Math.random()*220];
-  return animateStripsToTargets(strips,durations).then(()=>{
-    state.spinsLeft -= 1;
-    const ev = evaluateGrid(finalGrid);
-    let gained = ev.coins;
-    if(state.equipped.some(a=>a.doubleOnCombo) && ev.combos.length>0) gained *= 2;
-    state.coins += gained;
-    if(ev.combos.length>0) state.tickets += ev.combos.length;
-    if(ev.coins>0) state.luck = clamp(state.luck+1,0,10);
-    else state.luck = clamp(state.luck+1,0,10); // small consolation for failed spins to raise future chance
-    addHistory(finalGrid, ev, gained);
-    renderUI(); autosave(); checkDeadlineProgress(); spinLocked=false; return {ev,gained};
-  }).catch(err=>{ spinLocked=false; throw err; });
-}
+function spinOnce(){ if(spinLocked) return Promise.reject('busy'); if(state.spinsLeft<=0) return Promise.reject('no-spins'); spinLocked=true; const finalGrid = rollDeterministic(); const strips=[]; for(let c=0;c<3;c++) strips.push(buildStripWithTarget(finalGrid[c])); const durations=[700+Math.random()*220,900+Math.random()*220,1050+Math.random()*220]; return animateStripsToTargets(strips,durations).then(()=>{ state.spinsLeft -=1; const ev = evaluateGrid(finalGrid); let gained = ev.coins; if(state.equipped.some(a=>a.doubleOnCombo) && ev.combos.length>0) gained *=2; state.coins += gained; if(ev.combos.length>0) state.tickets += ev.combos.length; if(ev.coins>0) state.luck = clamp(state.luck+1,0,10); else state.luck = clamp(state.luck+1,0,10); addHistory(finalGrid,ev,gained); renderUI(); autosave(); checkDeadlineProgress(); spinLocked=false; return {ev,gained}; }).catch(err=>{ spinLocked=false; throw err; }); }
 
 // ------------- RUN MULTI SPINS SEQUENTIAL ---------------
 async function runSpins(count){ if(spinLocked) return; toggleUI(true); for(let i=0;i<count;i++){ if(state.spinsLeft<=0) break; try{ await spinOnce(); }catch(e){ break; } await new Promise(r=>setTimeout(r,200)); } toggleUI(false); }
 
 // ------------- UI / STORE ---------------
 function genStore(){ const pool=AMULETS_BASE.slice(); const res=[]; while(res.length<5 && pool.length>0){ const idx=Math.floor(Math.random()*pool.length); res.push(pool.splice(idx,1)[0]); } state.store=res; }
-function buyAmulet(i){ const a=state.store[i]; if(!a) return; if(state.tickets<a.cost){ alert('No tienes tickets'); return; } if(state.equipped.length>=4){ alert('Máx 4'); return; } state.tickets -= a.cost; const inst = Object.assign({},a); const applied = a.apply(); if(applied.mod) inst.mod=applied.mod; if(applied.spins) inst.spins=applied.spins; if(applied.interest) inst.interest=true; if(applied.ticketSeed) inst.ticketSeed=applied.ticketSeed; if(applied.luck) inst.luck=applied.luck; if(applied.doubleOnCombo) inst.doubleOnCombo=true; state.equipped.push(inst); renderUI(); autosave(); }
+function buyAmulet(i){ const a=state.store[i]; if(!a) return; if(state.tickets<a.cost){ alert('No tienes tickets'); return; } if(state.equipped.length>=4){ alert('Máx 4'); return; } state.tickets -= a.cost; const inst=Object.assign({},a); const applied=a.apply(); if(applied.mod) inst.mod=applied.mod; if(applied.spins) inst.spins=applied.spins; if(applied.interest) inst.interest=true; if(applied.ticketSeed) inst.ticketSeed=applied.ticketSeed; if(applied.luck) inst.luck=applied.luck; if(applied.doubleOnCombo) inst.doubleOnCombo=true; state.equipped.push(inst); renderUI(); autosave(); }
 function unequip(i){ state.equipped.splice(i,1); renderUI(); autosave(); }
 
-function depositATM(){ const amount = Math.min(state.coins,50); if(amount<=0){ alert('No tienes coins'); return; } state.coins -= amount; state.atm += amount; renderUI(); autosave(); }
+function depositATM(){ const amount=Math.min(state.coins,50); if(amount<=0){ alert('No tienes coins'); return; } state.coins -= amount; state.atm += amount; renderUI(); autosave(); }
 function rerollStore(){ if(state.coins<50){ alert('Necesitas 50 coins'); return; } state.coins -=50; genStore(); renderUI(); autosave(); }
 
-function addHistory(grid,ev,gained){ const el=document.getElementById('history'); const e=document.createElement('div'); e.style.padding='6px'; e.style.borderBottom='1px solid rgba(255,255,255,0.02)'; e.innerHTML=`<strong>+${gained} coins</strong> — Combos: ${ev.combos.join(', ') || '—'}`; el.prepend(e); while(el.childElementCount>40) el.removeChild(el.lastChild); if(ev.combos.length>0){ showFlash(ev.combos.length>=2 ? `BIG WIN +${gained}` : `Win +${gained}`); } }
+function addHistory(grid,ev,gained){ const el=document.getElementById('history'); const e=document.createElement('div'); e.style.padding='6px'; e.style.borderBottom='1px solid rgba(255,255,255,0.02)'; e.innerHTML = `<strong>+${gained} coins</strong> — Combos: ${ev.combos.join(', ') || '—'}`; el.prepend(e); while(el.childElementCount>40) el.removeChild(el.lastChild); if(ev.combos.length>0){ showFlash(ev.combos.length>=2 ? `BIG WIN +${gained}` : `Win +${gained}`); } }
 function showFlash(text){ const f=document.getElementById('flash'); f.textContent=text; f.style.display='block'; setTimeout(()=>f.style.display='none',1400); }
 
-function renderUI(){ document.getElementById('coins').textContent=state.coins; document.getElementById('tickets').textContent=state.tickets; document.getElementById('atm').textContent=state.atm; document.getElementById('goal').textContent=state.goal; document.getElementById('spinsLeft').textContent=state.spinsLeft; document.getElementById('round').textContent=state.round;
-  const storeEl=document.getElementById('store'); storeEl.innerHTML=''; state.store.forEach((a,i)=>{ const r=document.createElement('div'); r.style.display='flex'; r.style.justifyContent='space-between'; r.style.alignItems='center'; r.style.padding='6px'; r.style.borderBottom='1px solid rgba(255,255,255,0.02)'; r.innerHTML=`<div><strong>${a.name}</strong><div class='muted' style='font-size:12px'>${a.desc}</div></div>`; const b=document.createElement('button'); b.textContent=`Comprar (${a.cost})`; b.onclick=()=>buyAmulet(i); r.appendChild(b); storeEl.appendChild(r); });
-  const eq=document.getElementById('equipped'); eq.innerHTML=''; state.equipped.forEach((a,i)=>{ const d=document.createElement('div'); d.style.minWidth='120px'; d.style.background='rgba(255,255,255,0.02)'; d.style.padding='6px'; d.style.borderRadius='8px'; d.innerHTML=`<div><strong>${a.name}</strong><div class='muted' style='font-size:12px'>${a.desc}</div></div>`; const btn=document.createElement('button'); btn.textContent='Quitar'; btn.onclick=()=>unequip(i); d.appendChild(btn); eq.appendChild(d); }); }
+function renderUI(){ document.getElementById('coins').textContent=state.coins; document.getElementById('tickets').textContent=state.tickets; document.getElementById('atm').textContent=state.atm; document.getElementById('goal').textContent=state.goal; document.getElementById('spinsLeft').textContent=state.spinsLeft; document.getElementById('round').textContent=state.round; const storeEl=document.getElementById('store'); storeEl.innerHTML=''; state.store.forEach((a,i)=>{ const r=document.createElement('div'); r.style.display='flex'; r.style.justifyContent='space-between'; r.style.alignItems='center'; r.style.padding='6px'; r.style.borderBottom='1px solid rgba(255,255,255,0.02)'; r.innerHTML=`<div><strong>${a.name}</strong><div class='muted' style='font-size:12px'>${a.desc}</div></div>`; const b=document.createElement('button'); b.textContent=`Comprar (${a.cost})`; b.onclick=()=>buyAmulet(i); r.appendChild(b); storeEl.appendChild(r); }); const eq=document.getElementById('equipped'); eq.innerHTML=''; state.equipped.forEach((a,i)=>{ const d=document.createElement('div'); d.style.minWidth='120px'; d.style.background='rgba(255,255,255,0.02)'; d.style.padding='6px'; d.style.borderRadius='8px'; d.innerHTML=`<div><strong>${a.name}</strong><div class='muted' style='font-size:12px'>${a.desc}</div></div>`; const btn=document.createElement('button'); btn.textContent='Quitar'; btn.onclick=()=>unequip(i); d.appendChild(btn); eq.appendChild(d); }); // pay button enable if enough coins
+  const payBtn = document.getElementById('payBtn'); if(payBtn){ payBtn.disabled = state.coins < state.goal; }
+}
 
-function toggleUI(disabled){ const allButtons=document.querySelectorAll('button'); allButtons.forEach(b=>b.disabled = !!disabled); }
+function toggleUI(disabled){ const allButtons=document.querySelectorAll('button'); allButtons.forEach(b=>b.disabled = !!disabled); // but keep pay button state consistent
+  const pay = document.getElementById('payBtn'); if(pay) pay.disabled = disabled || state.coins < state.goal; }
 
-// ------------- DEADLINE ---------------
-function checkDeadlineProgress(){ if(state.coins >= state.goal){ const extra = Math.floor(state.atm * (0.02 + (state.equipped.some(a=>a.interest)?0.04:0))); state.coins += extra; state.equipped.forEach(a=>{ if(a.ticketSeed && state.tickets>=3) state.tickets += a.ticketSeed; }); alert('Has pagado la deuda. Avanzas. Interés: +' + extra); state.round +=1; state.goal = Math.floor(state.goal * 1.5 + 25); state.spinsLeft = 8 + state.equipped.reduce((s,a)=>s+(a.spins||0),0); state.atm = Math.floor(state.atm * 1.02); state.tickets += 2; renderUI(); autosave(); } else if(state.spinsLeft<=0){ const lost = Math.min(Math.floor(state.coins * 0.15),40); state.coins = Math.max(0,state.coins - lost); alert('No alcanzaste la meta. Pierdes ' + lost + ' coins.'); renderUI(); autosave(); } }
+// ------------- PAY DEBT (manual) ---------------
+function payDebt(){ if(state.coins < state.goal){ alert('No tienes suficiente dinero para pagar la deuda'); return; } // subtract the goal amount
+  state.coins -= state.goal;
+  // interest and rewards same as before
+  const extra = Math.floor(state.atm * (0.02 + (state.equipped.some(a=>a.interest)?0.04:0)));
+  state.coins += extra;
+  state.equipped.forEach(a=>{ if(a.ticketSeed && state.tickets>=3) state.tickets += a.ticketSeed; });
+  alert('Has pagado la deuda. Interés: +' + extra);
+  state.round += 1;
+  state.goal = Math.floor(state.goal * 1.5 + 25);
+  state.spinsLeft = 8 + state.equipped.reduce((s,a)=>s+(a.spins||0),0);
+  state.atm = Math.floor(state.atm * 1.02);
+  state.tickets += 2;
+  renderUI(); autosave(); }
+
+// ------------- DEADLINE CHECK (only failure auto) ---------------
+function checkDeadlineProgress(){ if(state.spinsLeft<=0){ const lost = Math.min(Math.floor(state.coins * 0.15),40); state.coins = Math.max(0, state.coins - lost); alert('Se acabaron las tiradas. Pierdes ' + lost + ' coins.'); renderUI(); autosave(); } }
 
 // ------------- PERSISTENCE ---------------
 function autosave(){ localStorage.setItem('lucky_pit_save', JSON.stringify(state)); }
@@ -268,6 +214,7 @@ document.getElementById('spinBtn').onclick = ()=>{ runSpins(1); };
 document.getElementById('multiSpinBtn').onclick = ()=>{ runSpins(3); };
 document.getElementById('bankBtn').onclick = ()=>depositATM();
 document.getElementById('rerollStoreBtn').onclick = ()=>rerollStore();
+document.getElementById('payBtn').onclick = ()=>payDebt();
 document.getElementById('newRunBtn').onclick = ()=>{ if(confirm('Iniciar nueva run?')) newRun(); };
 document.getElementById('saveBtn').onclick = ()=>saveManual();
 document.getElementById('loadBtn').onclick = ()=>loadManual();
