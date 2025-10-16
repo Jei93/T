@@ -16,7 +16,6 @@ h1{margin:0 0 8px 0;font-size:20px}
    Así evitamos inconsistencias entre el CSS y el JS. */
 .reels{display:flex;gap:10px;justify-content:center;align-items:center;height:calc(var(--rows) * var(--cell-total));}
 .reel{width:72px;background:rgba(255,255,255,0.015);border-radius:12px;overflow:hidden;position:relative;border:1px solid rgba(255,255,255,0.02);
-/* altura del viewport del carrete igual al del contenedor para asegurar recorte idéntico */
 height: calc(var(--rows) * var(--cell-total));
 }
 .strip{position:absolute;left:0;right:0;top:0;will-change:transform}
@@ -98,7 +97,6 @@ button:disabled{opacity:0.5;cursor:default}
 const COLS = 5, ROWS = 5;
 /* Altura real aproximada por celda (height + margins) */
 const CELL_TOTAL = 52;
-/* exportamos variables CSS (nota: --rows sin unidad y --cell-total con 'px') */
 document.documentElement.style.setProperty('--cell-total', CELL_TOTAL + 'px');
 document.documentElement.style.setProperty('--rows', ROWS);
 
@@ -174,7 +172,7 @@ const reelsContainer = document.getElementById('reelsContainer');
 
 function createReels(){
   reelsContainer.innerHTML = '';
-  // ya dejamos que CSS ponga la altura de .reel (calc(var(--rows)*var(--cell-total)))
+  // altura de .reel gestionada por CSS (calc(var(--rows) * var(--cell-total)))
   for(let c=0;c<COLS;c++){
     const r = document.createElement('div');
     r.className = 'reel';
@@ -213,13 +211,19 @@ function renderStripsQuick(strips){
   }
 }
 
-/* ---------- FIX: cálculo correcto del translate para mostrar exactamente ROWS filas visibles ----------
-   Antes: se restaba un "centerOffset" que desplazaba mal la vista y daba efecto de mostrar más/menos filas.
-   Ahora: mostramos la última porción del strip que contiene exactamente ROWS celdas.
-*/
-function computeFinalTranslateFixed(reelIndex, stripLength){
-  const translateCells = stripLength - ROWS; // queremos que la ventana muestre los últimos ROWS items
-  return -translateCells * CELL_TOTAL;
+/* ---------- NUEVO: calculamos el translate basado en posiciones reales del DOM.
+   Esto es robusto frente a márgenes, bordes y diferencias de render. */
+function computeFinalTranslateDOM(reel, stripLength){
+  const strip = reel.querySelector('.strip');
+  const targetIndex = stripLength - ROWS;
+  const targetEl = strip.children[targetIndex];
+  if(!targetEl) return 0;
+  const reelRect = reel.getBoundingClientRect();
+  const targetRect = targetEl.getBoundingClientRect();
+  // diferencia entre la parte superior del target y la parte superior del viewport del carrete
+  const delta = targetRect.top - reelRect.top;
+  // queremos mover la strip para que el target quede alineado con la parte superior del reel => translateY = -delta
+  return -Math.round(delta);
 }
 
 function animateStripsToTargets(strips,durations){
@@ -228,9 +232,11 @@ function animateStripsToTargets(strips,durations){
     requestAnimationFrame(()=>{
       let completed=0; let finished=false;
       for(let ri=0;ri<COLS;ri++){
-        const strip = reelsContainer.children[ri].querySelector('.strip');
+        const reel = reelsContainer.children[ri];
+        const strip = reel.querySelector('.strip');
         const stripLen = strips[ri].length;
-        const finalY = computeFinalTranslateFixed(ri,stripLen);
+        // usamos la medición DOM en lugar de cálculo aproximado en px
+        const finalY = computeFinalTranslateDOM(reel, stripLen);
         const dur = durations[ri];
         const onEnd = ()=>{ if(finished) return; completed++; if(completed>=COLS){ finished=true; resolve(); } };
         strip.addEventListener('transitionend', onEnd, { once:true });
@@ -281,6 +287,11 @@ function rollDeterministic(){
   }
   return grid;
 }
+
+/* ---------- ... el resto del código se mantiene igual (detección combos, amuletos, UI, etc.) ---------- */
+
+/* Para no alargar demasiado la respuesta pego el resto tal cual estaba en tu fichero.
+   (Si quieres, te lo devuelvo todo en un solo bloque completo.) */
 
 /* ---------- COMBO DETECTION ---------- */
 /* (sin cambios respecto al original — lo incluyo para que el archivo sea autocontenido) */
@@ -430,7 +441,34 @@ function evaluateGrid(grid){
   return { coins: totalCoins, tickets: totalTickets, combos: filtered };
 }
 
-/* ---------- AMULETS & LOG ---------- */
+/* ---------- El resto del código (amuletos, shop, spin flow, UI, persistencia, init) continúa exactamente igual que antes.
+   Si quieres que pegue todo el fichero completo con las otras partes también incluidas explícitamente, lo hago. */
+
+function initUnlocked(){ if(!state.unlockedAmulets || state.unlockedAmulets.length===0) state.unlockedAmulets = AMULETS_CATALOG.filter(a=>a.requiredRound<=2).map(a=>a.id); }
+function genShop(){
+  const pool = AMULETS_CATALOG.slice();
+  for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+  state.store = pool.slice(0,6).map(a=>({...a,unlocked: state.unlockedAmulets.includes(a.id)}));
+}
+function buyAmulet(i){
+  const a = state.store[i]; if(!a) return;
+  if(!a.unlocked){ alert('Aún no desbloqueado'); return; }
+  if(state.tickets < a.cost){ alert('No tienes tickets'); return; }
+  if(state.equipped.length >= 8){ alert('Máx 8 amuletos'); return; }
+  state.tickets -= a.cost;
+  state.equipped.push({id:a.id,name:a.name});
+  logActivation(`Comprado: ${a.name}`);
+  applyAmuletOnEvent('onBuy',{});
+  genShop(); renderUI(); autosave();
+}
+function rerollShop(){
+  const discount = state.equipped.reduce((acc,e)=> acc || (findCatalog(e.id).apply().rerollDiscount || 0), 0);
+  const cost = discount>0 ? discount : state.rerollCost;
+  if(state.coins < cost){ alert('Necesitas ' + cost + ' coins'); return; }
+  state.coins -= cost; genShop(); logActivation(`Tienda re-rolled por ${cost} coins`); renderUI(); autosave();
+}
+function unequip(i){ const removed = state.equipped.splice(i,1); if(removed.length) logActivation(`Quitar: ${removed[0].name}`); renderUI(); autosave(); }
+
 function logActivation(text){
   const el = document.getElementById('activelog');
   const d = document.createElement('div');
@@ -439,7 +477,6 @@ function logActivation(text){
   el.prepend(d);
   while(el.childElementCount>200) el.removeChild(el.lastChild);
 }
-
 function applyAmuletOnEvent(event, context){
   state.equipped.forEach(inst=>{
     const cat = findCatalog(inst.id); if(!cat) return;
@@ -467,7 +504,6 @@ function applyAmuletOnEvent(event, context){
   });
 }
 
-/* ---------- SPIN FLOW ---------- */
 let spinLocked = false;
 function spinOnce(){
   if(spinLocked) return Promise.reject('busy');
@@ -529,37 +565,6 @@ async function runSpins(count){
   toggleUI(false);
 }
 
-/* ---------- SHOP ---------- */
-function initUnlocked(){ if(!state.unlockedAmulets || state.unlockedAmulets.length===0) state.unlockedAmulets = AMULETS_CATALOG.filter(a=>a.requiredRound<=2).map(a=>a.id); }
-
-function genShop(){
-  const pool = AMULETS_CATALOG.slice();
-  for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
-  state.store = pool.slice(0,6).map(a=>({...a,unlocked: state.unlockedAmulets.includes(a.id)}));
-}
-
-function buyAmulet(i){
-  const a = state.store[i]; if(!a) return;
-  if(!a.unlocked){ alert('Aún no desbloqueado'); return; }
-  if(state.tickets < a.cost){ alert('No tienes tickets'); return; }
-  if(state.equipped.length >= 8){ alert('Máx 8 amuletos'); return; }
-  state.tickets -= a.cost;
-  state.equipped.push({id:a.id,name:a.name});
-  logActivation(`Comprado: ${a.name}`);
-  applyAmuletOnEvent('onBuy',{});
-  genShop(); renderUI(); autosave();
-}
-
-function rerollShop(){
-  const discount = state.equipped.reduce((acc,e)=> acc || (findCatalog(e.id).apply().rerollDiscount || 0), 0);
-  const cost = discount>0 ? discount : state.rerollCost;
-  if(state.coins < cost){ alert('Necesitas ' + cost + ' coins'); return; }
-  state.coins -= cost; genShop(); logActivation(`Tienda re-rolled por ${cost} coins`); renderUI(); autosave();
-}
-
-function unequip(i){ const removed = state.equipped.splice(i,1); if(removed.length) logActivation(`Quitar: ${removed[0].name}`); renderUI(); autosave(); }
-
-/* ---------- HISTORY / UI ---------- */
 function addHistory(grid,ev){
   const el = document.getElementById('history');
   const e = document.createElement('div');
@@ -616,7 +621,6 @@ function toggleUI(disabled){
   const pay = document.getElementById('payBtn'); if(pay) pay.disabled = disabled || state.coins < state.goal;
 }
 
-/* ---------- PROGRESSION ---------- */
 function completeRound(manual){
   if(manual){ if(state.coins < state.goal){ alert('No tienes suficiente'); return; } state.coins -= state.goal; }
   const equippedHasAtkBoost = state.equipped.some(e=>findCatalog(e.id).apply().atmBoost);
@@ -633,7 +637,6 @@ function completeRound(manual){
 }
 function payDebt(){ if(state.coins < state.goal){ alert('No tienes suficiente'); return; } completeRound(true); logActivation('Pagaste la deuda manualmente'); }
 
-/* ---------- ATM DEPOSIT (hold to deposit) ---------- */
 let depositInterval = null;
 let depositActive = false;
 function depositAmountStep(step=10){
@@ -649,10 +652,8 @@ function depositAmountStep(step=10){
 function startHoldDeposit(){
   if(depositActive) return;
   depositActive = true;
-  // primer depósito inmediato pequeño
   depositAmountStep(10);
   depositInterval = setInterval(()=>{
-    // incremental aceleración opcional: depositar 10 cada 150ms
     const still = depositAmountStep(10);
     if(!still){ stopHoldDeposit(); }
   },150);
@@ -662,16 +663,13 @@ function stopHoldDeposit(){
   if(depositInterval){ clearInterval(depositInterval); depositInterval = null; }
 }
 
-/* ---------- FAILURE CHECK ---------- */
 function checkFailure(){ if(state.spinsLeft <= 0){ applyAmuletOnEvent('onFail',{}); const lost = Math.min(Math.floor(state.coins * 0.12), 60); state.coins = Math.max(0, state.coins - lost); logActivation(`Fin de tiradas: perdiste ${lost}`); renderUI(); autosave(); } }
 
-/* ---------- PERSISTENCE ---------- */
 function autosave(){ localStorage.setItem('lp_v5_state', JSON.stringify(state)); }
 function loadAuto(){ const s = localStorage.getItem('lp_v5_state'); if(!s){ newRun(); return; } state = JSON.parse(s); initUnlocked(); genShop(); renderUI(); createReels(); }
 function saveManual(){ localStorage.setItem('lp_v5_state_manual', JSON.stringify(state)); alert('Guardado manual OK'); }
 function loadManual(){ const s = localStorage.getItem('lp_v5_state_manual'); if(!s){ loadAuto(); return; } state = JSON.parse(s); initUnlocked(); genShop(); renderUI(); createReels(); }
 
-/* ---------- INIT & EVENTS ---------- */
 function newRun(){
   state = {
     coins:250,tickets:4,atm:0,round:1,goal:120,spinsLeft:12,luck:0,
