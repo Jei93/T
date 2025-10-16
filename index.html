@@ -213,10 +213,10 @@ function renderStripsQuick(strips) {
 }
 
 function computeFinalTranslateFixed(reelIndex, stripLength) {
+  // El bloque visible está en los últimos ROWS índices: stripLength - ROWS .. stripLength - 1
+  // Colocamos el strip de tal forma que ese bloque quede visible en la ventana sin desplazar por el centroOffset incorrecto.
   const targetIdx = stripLength - ROWS;
-  const centerOffset = Math.floor(ROWS / 2);
-  const translateCells = targetIdx - centerOffset;
-  return -translateCells * CELL_TOTAL;
+  return -targetIdx * CELL_TOTAL;
 }
 
 function animateStripsToTargets(strips, durations) {
