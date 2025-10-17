@@ -147,8 +147,24 @@ const AMULETS_CATALOG = [
   { id: 'safety_net', name: 'Red Seguridad', cost: 6, desc: 'Recuperas parte al fallar (25% de coins)', requiredRound: 1, apply: () => ({ savePct: 0.25 }) },
   { id: 'ticket_mult', name: 'Multiplica Tickets', cost: 6, desc: 'Duplica tickets obtenidos de frutas especiales', requiredRound: 3, apply: () => ({ ticketMult: 2 }) },
 
-  /* Amuletos "rotos" */
-  { id: 'overload_seven', name: 'Overload Seven', cost: 20, desc: 'Aumenta +40 peso Seven y +100% valor de Seven', requiredRound: 4, apply: () => ({ mod: { Seven: 40 }, sevenValueMult: 2 }) },
+  /* Nuevos amuletos: muchas sinergias y variantes */
+  { id: 'seven_whisper', name: 'Seven Whisper', cost: 8, desc: '+8 peso Seven y +20% en bloques cuando hay 7s', requiredRound: 2, apply: () => ({ mod: { Seven: 8 }, blockBonus: 0.20 }) },
+  { id: 'cherry_choir', name: 'Cherry Choir', cost: 7, desc: '+10 peso Cherry y duplica tickets de Cherry', requiredRound: 2, apply: () => ({ mod: { Cherry: 10 }, ticketMult: 2 }) },
+  { id: 'combo_conductor', name: 'Combo Conductor', cost: 10, desc: 'Mejora combos grandes y bloques (sin duplicar)', requiredRound: 3, apply: () => ({ doubleOnBig: true, blockBonus: 0.5 }) },
+  { id: 'synergy_core', name: 'Synergy Core', cost: 12, desc: 'Multiplica ligeramente ganancias globales y da pequeño boost a ATM', requiredRound: 4, apply: () => ({ globalWinMult: 1.18, atmBoost: 0.03 }) },
+  { id: 'cascade', name: 'Cascade', cost: 9, desc: '+ valor en flechas y +1 spin al completar ronda', requiredRound: 3, apply: () => ({ arrowBonus: 0.3, spins: 1 }) },
+  { id: 'echo_shield', name: 'Echo Shield', cost: 8, desc: 'Refund parcial al fallar y pequeña red de seguridad', requiredRound: 3, apply: () => ({ refundPct: 0.15, savePct: 0.15 }) },
+  { id: 'duplicator', name: 'Duplicator', cost: 11, desc: 'Aumenta impacto en combos grandes y eleva multiplicador global', requiredRound: 4, apply: () => ({ doubleOnBig: true, globalWinMult: 1.25 }) },
+  { id: 'magnet_ring', name: 'Magnet Ring', cost: 7, desc: 'Atrae sevens (+6 peso) y rebaja re-roll', requiredRound: 2, apply: () => ({ mod: { Seven: 6 }, rerollDiscount: 30 }) },
+  { id: 'ticket_mint', name: 'Ticket Mint', cost: 9, desc: 'Genera más tickets al completar combos y ocasional ticket flood', requiredRound: 3, apply: () => ({ ticketSeed: 2, ticketFloodChance: 0.12 }) },
+  { id: 'precision_orb', name: 'Precision Orb', cost: 8, desc: 'Mejora bloques y flechas (sinergia con Bloquero y Flecha Ampl.)', requiredRound: 3, apply: () => ({ blockBonus: 0.25, arrowBonus: 0.2 }) },
+  { id: 'frenzy_core', name: 'Frenzy Core', cost: 14, desc: 'Multiplicador global fuerte para builds de combo', requiredRound: 5, apply: () => ({ globalWinMult: 1.4 }) },
+  { id: 'chain_reactor', name: 'Chain Reactor', cost: 10, desc: '+1 spin automático cada 2 tiradas (sinergia Spin Battery)', requiredRound: 3, apply: () => ({ spinBattery: { every: 2, give: 1 } }) },
+  { id: 'shop_keeper', name: 'Shop Keeper', cost: 6, desc: 'gratis reroll al comprar y baja cuesta de reroll', requiredRound: 2, apply: () => ({ freeRerollOnBuy: true, rerollDiscount: 20 }) },
+  { id: 'harmony', name: 'Harmony', cost: 9, desc: 'Multiplica tickets y da pequeño boost global para sinergias', requiredRound: 4, apply: () => ({ ticketMult: 2, globalWinMult: 1.1 }) },
+
+  /* Amuletos "rotos" (ajustado Overload Seven para quitar +40 y x2 valor) */
+  { id: 'overload_seven', name: 'Overload Seven', cost: 12, desc: 'Aumenta peso Seven (+8) y aporta bonus de combo (menos roto)', requiredRound: 4, apply: () => ({ mod: { Seven: 8 }, blockBonus: 0.15 }) },
   { id: 'jackpot_engine', name: 'Jackpot Engine', cost: 25, desc: 'Multiplica todas las ganancias de combos por 2.5', requiredRound: 5, apply: () => ({ globalWinMult: 2.5 }) },
   { id: 'ticket_flood', name: 'Ticket Flood', cost: 18, desc: 'Alta probabilidad (25%) de dropear 1-3 tickets por tirada', requiredRound: 4, apply: () => ({ ticketFloodChance: 0.25 }) },
   { id: 'spin_battery', name: 'Spin Battery', cost: 15, desc: 'Ganas +1 spin automático cada 3 tiradas', requiredRound: 3, apply: () => ({ spinBattery: { every: 3, give: 1 } }) }
@@ -288,7 +304,7 @@ function rollDeterministic(){
   return grid;
 }
 
-/* ---------- ... el resto del código se mantiene igual (detección combos, amuletos, UI, etc.) ---------- */
+/* ---------- ... el resto del código se mantiene igual (detección combos, amuletos, UI, persistencia, init) ---------- */
 
 /* Para no alargar demasiado la respuesta pego el resto tal cual estaba en tu fichero.
    (Si quieres, te lo devuelvo todo en un solo bloque completo.) */
@@ -699,3 +715,4 @@ initUnlocked(); genShop(); renderUI(); createReels(); autosave();
 </script>
 </body>
 </html>
+
