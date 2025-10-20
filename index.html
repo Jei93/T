@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>Lucky Pit - 5x5 Extendido (corregido hold-deposit)</title>
+<title>Lucky Pit - 5x5 Extendido (con stats)</title>
 <style>
 :root{ --bg:#04101a; --card:#071226; --accent:#ffd166; --accent2:#ff8a66; --muted:#9aa4b2 }
 *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue', Arial}
@@ -12,8 +12,6 @@ html,body{height:100%;margin:0;background:linear-gradient(180deg,#04101a,#071226
 h1{margin:0 0 8px 0;font-size:20px}
 .grid{display:grid;grid-template-columns:1fr 460px;gap:16px}
 .card{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));border-radius:12px;padding:14px;box-shadow:0 8px 28px rgba(0,0,0,0.6)}
-/* La altura de la vista de los carretes la calculamos desde CSS usando las variables --rows y --cell-total.
-   Así evitamos inconsistencias entre el CSS y el JS. */
 .reels{display:flex;gap:10px;justify-content:center;align-items:center;height:calc(var(--rows) * var(--cell-total));}
 .reel{width:72px;background:rgba(255,255,255,0.015);border-radius:12px;overflow:hidden;position:relative;border:1px solid rgba(255,255,255,0.02);
 height: calc(var(--rows) * var(--cell-total));
@@ -188,7 +186,6 @@ const reelsContainer = document.getElementById('reelsContainer');
 
 function createReels(){
   reelsContainer.innerHTML = '';
-  // altura de .reel gestionada por CSS (calc(var(--rows) * var(--cell-total)))
   for(let c=0;c<COLS;c++){
     const r = document.createElement('div');
     r.className = 'reel';
@@ -227,8 +224,6 @@ function renderStripsQuick(strips){
   }
 }
 
-/* ---------- NUEVO: calculamos el translate basado en posiciones reales del DOM.
-   Esto es robusto frente a márgenes, bordes y diferencias de render. */
 function computeFinalTranslateDOM(reel, stripLength){
   const strip = reel.querySelector('.strip');
   const targetIndex = stripLength - ROWS;
@@ -236,9 +231,7 @@ function computeFinalTranslateDOM(reel, stripLength){
   if(!targetEl) return 0;
   const reelRect = reel.getBoundingClientRect();
   const targetRect = targetEl.getBoundingClientRect();
-  // diferencia entre la parte superior del target y la parte superior del viewport del carrete
   const delta = targetRect.top - reelRect.top;
-  // queremos mover la strip para que el target quede alineado con la parte superior del reel => translateY = -delta
   return -Math.round(delta);
 }
 
@@ -251,7 +244,6 @@ function animateStripsToTargets(strips,durations){
         const reel = reelsContainer.children[ri];
         const strip = reel.querySelector('.strip');
         const stripLen = strips[ri].length;
-        // usamos la medición DOM en lugar de cálculo aproximado en px
         const finalY = computeFinalTranslateDOM(reel, stripLen);
         const dur = durations[ri];
         const onEnd = ()=>{ if(finished) return; completed++; if(completed>=COLS){ finished=true; resolve(); } };
@@ -263,7 +255,7 @@ function animateStripsToTargets(strips,durations){
   });
 }
 
-/* ---------- GRID GENERATION ---------- */
+/* ---------- GRID GENERACIÓN ---------- */
 function buildWeights(){
   const base = state.symbols.map(s=>s.weight);
   state.equipped.forEach(a=>{
@@ -291,7 +283,6 @@ function spawnCell(weights){
   return { id: sym.id, key: sym.key, baseValue: sym.value, ticket, doubled };
 }
 
-/* ---------- IMPORTANT: removed global central-row bias that forced same symbol across columns ---------- */
 function rollDeterministic(){
   const weights = buildWeights();
   const grid = [];
@@ -304,13 +295,7 @@ function rollDeterministic(){
   return grid;
 }
 
-/* ---------- ... el resto del código se mantiene igual (detección combos, amuletos, UI, persistencia, init) ---------- */
-
-/* Para no alargar demasiado la respuesta pego el resto tal cual estaba en tu fichero.
-   (Si quieres, te lo devuelvo todo en un solo bloque completo.) */
-
 /* ---------- COMBO DETECTION ---------- */
-/* (sin cambios respecto al original — lo incluyo para que el archivo sea autocontenido) */
 function evaluateGrid(grid){
   const combos=[]; let coins=0, tickets=0;
   function addCombo(type,cells){
@@ -457,8 +442,7 @@ function evaluateGrid(grid){
   return { coins: totalCoins, tickets: totalTickets, combos: filtered };
 }
 
-/* ---------- El resto del código (amuletos, shop, spin flow, UI, persistencia, init) continúa exactamente igual que antes.
-   Si quieres que pegue todo el fichero completo con las otras partes también incluidas explícitamente, lo hago. */
+/* ---------- AMULETS, SHOP, UI, FLOW (igual que antes) ---------- */
 
 function initUnlocked(){ if(!state.unlockedAmulets || state.unlockedAmulets.length===0) state.unlockedAmulets = AMULETS_CATALOG.filter(a=>a.requiredRound<=2).map(a=>a.id); }
 function genShop(){
@@ -695,6 +679,72 @@ function newRun(){
   initUnlocked(); genShop(); renderUI(); createReels(); autosave();
 }
 
+/* ---------- GOOGLE SHEETS STATS (INTEGRADO: NO HACES NADA) ---------- */
+const STATS_URL = "https://script.google.com/macros/s/AKfycbxlqJ_1stemAJQQeIN7rBbc9C1ez64VphXNgFpqiCnLYGA50iwPr3U1R7Bt6r93dUvg/exec";
+const STATS_SECRET = "ChemaCalvo";
+
+function generatePlayerId() {
+  let id = localStorage.getItem("lp_playerId");
+  if(!id){
+    id = 'player_' + Math.random().toString(36).substr(2,9);
+    localStorage.setItem("lp_playerId", id);
+  }
+  return id;
+}
+
+function sendStatsToSheet(extra = {}) {
+  // Construye el payload con lo importante
+  const payload = {
+    secret: STATS_SECRET,
+    playerId: generatePlayerId(),
+    round: state.round,
+    coins: state.coins,
+    tickets: state.tickets,
+    atm: state.atm,
+    spinsLeft: state.spinsLeft,
+    roundsCompleted: state.roundsCompleted,
+    unlockPoints: state.unlockPoints,
+    timestamp: new Date().toISOString(),
+    ...extra
+  };
+
+  // Intentamos enviar con fetch; si hay problemas de CORS, aún así la petición puede llegar si configuras el Web App correctamente.
+  fetch(STATS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  }).then(r => {
+    // A veces Apps Script no responde con CORS permitido; no dependemos de la respuesta.
+    if(r.ok) return r.json().then(j=> console.log("Stats sent:", j)).catch(()=>console.log("Stats sent (no JSON)"));
+    else console.warn("Stats send failed status", r.status);
+  }).catch(err => {
+    // Silencioso pero lo registramos en consola para depuración
+    console.warn("Stats send error:", err);
+  });
+}
+
+/* Hooks para enviar automáticamente:
+   - envío al completar ronda (completeRound)
+   - envío también al quedarse sin tiradas (checkFailure)
+   Hacemos overrides seguros para no romper la lógica original.
+*/
+
+const _orig_completeRound = completeRound;
+completeRound = function(manual){
+  _orig_completeRound(manual);
+  try{ sendStatsToSheet({ event: 'round_complete' }); }catch(e){ console.warn(e); }
+};
+
+const _orig_checkFailure = checkFailure;
+checkFailure = function(){
+  _orig_checkFailure();
+  // si no quedan spins se dispara checkFailure -> enviamos
+  if(state.spinsLeft <= 0){
+    try{ sendStatsToSheet({ event: 'no_spins' }); }catch(e){ console.warn(e); }
+  }
+};
+
+/* ---------- EVENTOS BÁSICOS / BOTONES ---------- */
 document.getElementById('spinBtn').onclick = ()=>{ runSpins(1); };
 document.getElementById('multiSpinBtn').onclick = ()=>{ runSpins(3); };
 document.getElementById('rerollStoreBtn').onclick = ()=>{ rerollShop(); };
@@ -715,4 +765,3 @@ initUnlocked(); genShop(); renderUI(); createReels(); autosave();
 </script>
 </body>
 </html>
-
